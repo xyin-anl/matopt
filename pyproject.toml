@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "matopt"
+version = "0.0.1"
+authors = [
+    { name="Shawn Yin", email="shawn.pypi@gmail.com" },
+]
+description = "Materials Design via Mathematical Optimization"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "pyomo",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/xyin-anl/matopt"
+"Bug Tracker" = "https://github.com/xyin-anl/matopt/issues"
