@@ -577,7 +577,8 @@ class MatOptModel(BaseModel):
 
         Args:
             func (``MaterialDescriptor``/``Expr``): Material functionality to optimize.
-            **kwargs: Arguments to ``MatOptModel.optimize``
+            **kwargs: Arguments to ``MatOptModel.optimize``, including:
+                - See ``MatOptModel.optimize`` for other arguments.
 
         Returns:
             (``Design``/list<``Design``>) Optimal designs.
@@ -595,7 +596,8 @@ class MatOptModel(BaseModel):
 
         Args:
             func (``MaterialDescriptor``/``Expr``): Material functionality to optimize.
-            **kwargs: Arguments to ``MatOptModel.optimize``
+            **kwargs: Arguments to ``MatOptModel.optimize``, including:
+                - See ``MatOptModel.optimize`` for other arguments.
 
         Returns:
             (``Design``/list<``Design``>) Optimal designs.
@@ -767,7 +769,7 @@ class MatOptModel(BaseModel):
         dispPrint("Identified {} solutions via populate.".format(len(Ds)))
         return Ds
 
-    def _make_pyomo_model(self, obj_expr, sense):
+    def _make_pyomo_model(self, obj_expr, sense, formulation="milp"):
         """Method to create a Pyomo concrete model object.
 
         This method creates a Pyomo model and also modifies several objects
@@ -781,6 +783,9 @@ class MatOptModel(BaseModel):
             sense (int): flag to indicate the choice to minimize or maximize the
                 functionality of interest.
                 Choices: minimize/maximize (Pyomo constants 1,-1 respectively)
+            formulation (str): The type of formulation to use. Either "milp" for
+                big-M constraints or "miqcqp" for direct quadratic constraints.
+                Default: "milp"
 
         Returns:
             (ConcreteModel) Pyomo model object.
@@ -801,7 +806,7 @@ class MatOptModel(BaseModel):
                         Binary if desc.binary else (Integers if desc.integer else Reals)
                     ),
                     bounds=desc._pyomo_bounds,
-                    dense=False
+                    dense=False,
                 )
                 setattr(m, desc.name, v)
                 setattr(desc, "_pyomo_var", v)
@@ -820,7 +825,7 @@ class MatOptModel(BaseModel):
         #       encoded.
         #       Else, lots of constraints for basic variables that are not
         #       necessary will be written.
-        addConsForGeneralVars(m)
+        addConsForGeneralVars(m, formulation=formulation)
         for desc in self._descriptors:
             for r in desc.rules:
                 if isinstance(r, FixedTo):

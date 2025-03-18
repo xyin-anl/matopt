@@ -180,6 +180,9 @@ def _addConsXijFromYi(m):
         )
 
 
+_enforceXijEqualsYiYj_MILP = _addConsXijFromYi
+
+
 def _addConsXijklFromYik(m):
     m.AssignXijklFromYik1 = Constraint(m.I, m.I, m.K, m.K)
     m.AssignXijklFromYik2 = Constraint(m.I, m.I, m.K, m.K)
@@ -197,6 +200,9 @@ def _addConsXijklFromYik(m):
         )
 
 
+_enforceXijklEqualsYikYjl_MILP = _addConsXijklFromYik
+
+
 def _addConsYiFromYik(m):
     m.AssignYiFromYik = Constraint(m.I)
     for i in m.Yi.keys():
@@ -211,10 +217,32 @@ def _addConsYikSOS1(m):
         m.AssignYikSOS1.add(index=i, expr=(sum(m.Yik[i, k] for k in m.K) <= 1))
 
 
-def addConsForGeneralVars(m):
+def _enforceXijEqualsYiYj_QC(m):
+    """
+    Enforce Xij[i,j] == Yi[i]*Yi[j] as a quadratic equality constraint
+    for each (i,j).
+    """
+    m.XijEqualsYiYj = Constraint(m.I, m.I)
+    for i, j in m.Xij.keys():
+        m.XijEqualsYiYj.add(index=(i, j), expr=(m.Xij[i, j] == m.Yi[i] * m.Yi[j]))
+
+
+def _enforceXijklEqualsYikYjl_QC(m):
+    """
+    Enforce Xijkl[i,j,k,l] == Yik[i,k]*Yik[j,l] as a quadratic equality constraint
+    for each (i,j,k,l).
+    """
+    m.XijklEqualsYikYjl = Constraint(m.I, m.I, m.K, m.K)
+    for i, j, k, l in m.Xijkl.keys():
+        m.XijklEqualsYikYjl.add(
+            index=(i, j, k, l), expr=(m.Xijkl[i, j, k, l] == m.Yik[i, k] * m.Yik[j, l])
+        )
+
+
+def addConsForGeneralVars(m, formulation="milp"):
     """Scan over the model and encode constraints for all basic variables present.
 
-    Encodes variables in a chain from derived to most basc:
+    Encodes variables in a chain from derived to most basic:
         Ci   <- Xij   <- Yi
         Cikl <- Xijkl <- Yik
 
@@ -225,6 +253,9 @@ def addConsForGeneralVars(m):
 
     Args:
         m (ConcreteModel): Model to encode basic constraints.
+        formulation (str): The type of formulation to use. Either "milp" for
+            big-M constraints or "miqcqp" for direct quadratic constraints.
+            Default: "milp"
 
     Returns:
         None.
@@ -232,8 +263,11 @@ def addConsForGeneralVars(m):
     Raises:
         NotImplementedError: Several competing encodings exist and make
             the set of constraints not clearly defined.
-
+        ValueError: If formulation is not "milp" or "miqcqp".
     """
+    if formulation not in ["milp", "miqcqp"]:
+        raise ValueError('formulation must be either "milp" or "miqcqp"')
+
     # Defining Ci
     if len(m.Ci) > 0:
         if len(m.Xij) > 0 and len(m.Cikl) > 0:
@@ -248,33 +282,48 @@ def addConsForGeneralVars(m):
                 "Ci lacks a proper way to be defined. User should define MaterialDescriptor Ci explicitly using valid "
                 "DescriptorRule"
             )
-            # Defining Cikl
+
+    # Defining Cikl
     if len(m.Cikl) > 0:
         _addConsCiklFromXijkl(m)
+
     # Defining Xij
     if len(m.Xij) > 0:
         if len(m.Xijkl) > 0 and len(m.Yi) > 0:
-            # NOTE: Chose to add both formulation because we believe neither is dominating
+            # NOTE: For both formulations, we still need the linear relationship between Xij and Xijkl
             _addConsXijFromXijkl(m)
-            _addConsXijFromYi(m)
+            # Then add either big-M or quadratic constraints for Yi relationship
+            if formulation == "milp":
+                _enforceXijEqualsYiYj_MILP(m)
+            else:  # miqcqp
+                _enforceXijEqualsYiYj_QC(m)
         elif len(m.Xijkl) > 0 or len(m.Yik) > 0:
             _addConsXijFromXijkl(m)
         elif len(m.Yi) > 0 or len(m.Yik) == 0:
-            _addConsXijFromYi(m)
+            if formulation == "milp":
+                _enforceXijEqualsYiYj_MILP(m)
+            else:  # miqcqp
+                _enforceXijEqualsYiYj_QC(m)
         else:
             raise NotImplementedError(
                 "Xij lacks a proper way to be defined. User should define MaterialDescriptor Xij explicitly using "
                 "valid DescriptorRule"
             )
-            # Defining Xijkl
+
+    # Defining Xijkl
     if len(m.Xijkl) > 0:
-        _addConsXijklFromYik(m)
+        if formulation == "milp":
+            _enforceXijklEqualsYikYjl_MILP(m)
+        else:  # miqcqp
+            _enforceXijklEqualsYikYjl_QC(m)
+
     # Defining Zic
     if len(m.Zic) > 0:
         if m.nK > 1:
             addConsZicFromYikLifted(m)
         else:
             addConsZicFromYiLifted(m)
+
     # Defining Yi
     if len(m.Yi) > 0:
         if len(m.Yik) > 0:
@@ -282,6 +331,7 @@ def addConsForGeneralVars(m):
         else:
             # Yi can serve as a suitable basic variable if no 'k' index is in the model
             pass
+
     # Define Yik
     # Still need to restrict Yik to be SOS1
     if len(m.K) > 1:
