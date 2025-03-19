@@ -1,211 +1,150 @@
+<img src="assets/matopt.png" alt="MatOpt Logo" width="300">
+
+# MatOpt: Materials Design via Mathematical Optimization
+
 > [!IMPORTANT]
 > This is a standalone version adapted from the [original implementation](https://github.com/IDAES/idaes-pse/tree/main/idaes/apps/matopt)
 
-<img src="assets/matopt.png" alt="MatOpt Logo" width="300">
+MatOpt is an Algebraic Modeling Language (AML) system specifically designed to create [Pyomo](https://www.pyomo.org/) objects for optimization-based nanomaterials design. It enables modeling of crystalline nanostructured materials, including particles, surfaces, and periodic bulk structures.
 
-MatOpt (Materials Design via Mathematical Optimization) is an Algebraic Modeling Language (AML) system specifically design to create [Pyomo](https://www.pyomo.org/) objects for optimization-based nanomaterials design. MatOpt can be used to model crystalline nanostructured materials, including but not limited to particles, surfaces, and periodic bulk structures.
+## 🚀 Key Features
 
-The main goals of this package are as follows:
+- **Simplified materials representation**: Streamline the creation of materials optimization problems
+- **Automated optimization workflows**: Speed up the development of new models for materials discovery
+- **Intuitive interface**: No need to handle the details of mathematical optimization or Pyomo syntax
 
-- To simplify the representation of nanostructured materials, streamlining the creation of materials optimization problems.
-- To automate many of the necessary steps of materials optimization, speeding up the development of new models and accelerating new materials discovery.
-- To provide a simple interface so that users do not need to handle the details of building efficient mathematical optimization models or the specific Pyomo syntax to do this.
+## 📦 Installation
 
-If you are using MatOpt, please consider citing:
-
-- Hanselman, C.L., Yin, X., Miller, D.C. and Gounaris, C.E., 2022. [MatOpt: A Python Package for Nanomaterials Design Using Discrete Optimization.](https://doi.org/10.1021/acs.jcim.1c00984) _Journal of Chemical Information and Modeling_, 62(2), pp.295-308.
-
-## Basic Usage
-
-**Installation**
-
-```
+```bash
 pip install matopt
 ```
 
-**Design**
+## 🧪 Citation
 
-There are two main sub-modules contained in the package serving two distinct purposes:
+If you use MatOpt, please consider citing:
 
-- The `matopt.materials` module contains objects and methods for efficiently representing and manipulating a nanomaterial and its design space.
-- The `matopt.aml` module contains objects and methods for speeding up the casting of a `pyomo` model with simplified modeling syntax and automatic model formulation tools.
+- Hanselman, C.L., Yin, X., Miller, D.C. and Gounaris, C.E., 2022. [MatOpt: A Python Package for Nanomaterials Design Using Discrete Optimization.](https://doi.org/10.1021/acs.jcim.1c00984) _Journal of Chemical Information and Modeling_, 62(2), pp.295-308.
 
-**Dependencies**
+## 📚 Package Structure
 
-User access to the solver CPLEX through Pyomo is assumed. For users who do not have access to CPLEX, the use of [NEOS-CPLEX](https://neos-guide.org/neos-interfaces#pyomo) is suggested as an alternative (Users need to setup a `NEOS_EMAIL` environment variable).
+MatOpt consists of two main sub-modules:
 
-**Define design canvas**
+- **`matopt.materials`**: Objects and methods for efficiently representing and manipulating nanomaterials and their design space
+- **`matopt.aml`**: Objects and methods for simplified Pyomo model creation with automatic model formulation tools
 
-Several pieces of information about the material and design space need to be specified in order to formulate a materials optimization problem. To fulfill this need, the `matopt.materials` module defines generic and simple objects for describing the type of material to be designed and its design space, also referred to as a "canvas".
+## 🔧 Dependencies
 
-Some key objects are listed as follows:
+MatOpt requires access to the CPLEX solver through Pyomo. If you don't have CPLEX access, you can use [NEOS-CPLEX](https://neos-guide.org/neos-interfaces#pyomo) as an alternative. (Users need to set up a `NEOS_EMAIL` environment variable.)
 
-**Build model via descriptors**
+## 🎨 Creating a Material Design Canvas
 
-The material type and design space specified provide indices, sets, and parameters for the optimization model. Using simple syntax, inspired by materials-related terminology, MatOpt users define a `MatOptModel` object, which will be translated into a Pyomo `ConcreteModel` object automatically.
+The `matopt.materials` module is the foundation of MatOpt, providing a rich set of objects and methods for representing materials and their design space. This module enables you to create, manipulate, and visualize nanomaterials with precise control.
 
-MatOpt uses `MaterialDescriptor` objects to represent variables, constraints, and objectives. A `MatOptModel` object holds lists of `MaterialDescriptor` objects. By default, several universal site descriptors are pre-defined in the model.
+### Canvas
 
-<table>
-<col width="15%" />
-<col width="84%" />
-<thead>
-<tr class="header">
-<th align="left">Descriptor</th>
-<th align="left">Explanation</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left"><code>Yik</code></td>
-<td align="left">Presence of a building block of type k at site i</td>
-</tr>
-<tr class="even">
-<td align="left"><code>Yi</code></td>
-<td align="left">Presence of any type of building block at site i</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>Xijkl</code></td>
-<td align="left">Presence of a building block of type k at site i and a building block of type l at site j</td>
-</tr>
-<tr class="even">
-<td align="left"><code>Xij</code></td>
-<td align="left">Presence of any building block at site i and any building block at site j</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>Cikl</code></td>
-<td align="left">Count of neighbors of type l next to a building block of type k at site i</td>
-</tr>
-<tr class="even">
-<td align="left"><code>Ci</code></td>
-<td align="left">Count of any type of neighbors next to a building block at site i</td>
-</tr>
-</tbody>
-</table>
+The `Canvas` class is the central container that defines the design space for your optimization problem. It manages:
 
-User-specified descriptors are defined by `DescriptorRule` objects in conjunction with `Expr` expression objects. Available expressions include:
+- Coordinates where atoms or building blocks can be placed
+- Connectivity between sites (critical for bond-based properties)
+- Design space boundaries and periodicity
 
-<table>
-<col width="24%" />
-<col width="75%" />
-<thead>
-<tr class="header">
-<th align="left">Expression</th>
-<th align="left">Explanation</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left"><code>LinearExpr</code></td>
-<td align="left">Multiplication and addition of coefficients to distinct descriptors</td>
-</tr>
-<tr class="even">
-<td align="left"><code>SiteCombination</code></td>
-<td align="left">Summation of site contributions from two sites</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>SumNeighborSites</code></td>
-<td align="left">Summation of site contributions from all neighboring sites</td>
-</tr>
-<tr class="even">
-<td align="left"><code>SumNeighborBonds</code></td>
-<td align="left">Summation of bond contributions to all neighboring sites</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>SumSites</code></td>
-<td align="left">Summation across sites</td>
-</tr>
-<tr class="even">
-<td align="left"><code>SumBonds</code></td>
-<td align="left">Summation across bonds</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>SumSiteTypes</code></td>
-<td align="left">Summation across site types</td>
-</tr>
-<tr class="even">
-<td align="left"><code>SumBondTypes</code></td>
-<td align="left">Summation across bond types</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>SumSitesAndTypes</code></td>
-<td align="left">Summation across sites and site types</td>
-</tr>
-<tr class="even">
-<td align="left"><code>SumBondsAndTypes</code></td>
-<td align="left">Summation across bonds and bond types</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>SumConfs</code></td>
-<td align="left">Summation across conformation types</td>
-</tr>
-<tr class="even">
-<td align="left"><code>SumSitesAndConfs</code></td>
-<td align="left">Summation across sites and conformation types</td>
-</tr>
-</tbody>
-</table>
+### Atoms
 
-Several types of `DescriptorRules` are available.
+The `Atom` class represents individual elements with their properties:
 
-<table>
-<col width="26%" />
-<col width="73%" />
-<thead>
-<tr class="header">
-<th align="left">Rule</th>
-<th align="left">Explanation</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left"><code>LessThan</code></td>
-<td align="left">Descriptor less than or equal to an expression</td>
-</tr>
-<tr class="even">
-<td align="left"><code>EqualTo</code></td>
-<td align="left">Descriptor equal to an expression</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>GreaterThan</code></td>
-<td align="left">Descriptor greater than or equal to an expression</td>
-</tr>
-<tr class="even">
-<td align="left"><code>FixedTo</code></td>
-<td align="left">Descriptor fixed to a scalar value</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>PiecewiseLinear</code></td>
-<td align="left">Descriptor equal to the evaluation of a piecewise linear function</td>
-</tr>
-<tr class="even">
-<td align="left"><code>Implies</code></td>
-<td align="left">Indicator descriptor that imposes other constraints if equal to 1</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>NegImplies</code></td>
-<td align="left">Indicator descriptor that imposes other constraints if equal to 0</td>
-</tr>
-<tr class="even">
-<td align="left"><code>ImpliesSiteCombination</code></td>
-<td align="left">Indicator bond-indexed descriptor that imposes constraints on the two sites</td>
-</tr>
-<tr class="odd">
-<td align="left"><code>ImpliesNeighbors</code></td>
-<td align="left">Indicator site-indexed descriptor that imposes constraints on neighboring sites</td>
-</tr>
-</tbody>
-</table>
+- Element symbol and atomic number
+- Radius, mass, and other physical properties
+- Custom properties for specific modeling needs
 
-From the combination of the above pre-defined descriptors, expressions, and rules, a user can specify a wide variety of other descriptors, as necessary.
+### Geometry Tools
 
-**Solve optimization model**
+The `geometry` module provides utilities for:
 
-Once the model is fully specified, the user can optimize it in light of a chosen descriptor to serve as the objective to be maximized or minimized, as appropriate. Several functions are provided for users to choose from. The results of the optimization process will be loaded into `Design` objects automatically. Users can then save material design(s) into files for further analysis and visualization using suitable functions provided. MatOpt provides interfaces to several standard crystal structure file formats, including CFG, PDB, POSCAR, and XYZ.
+- Coordinate transformations and rotations
+- Distance and angle calculations
+- Spatial operations on atom collections
 
-## Examples
+### Motifs and Building Blocks
 
-Below is a basic example of designing stable monometallic Pt nanoclusters given the size constraint. User can specify the problem using intuitive syntax and solve it using free NEOS-CPLEX solver (need to specify an email using `NEOS_EMAIL` environment variable)
+The `motifs` module allows you to:
+
+- Create recurring atomic arrangements (e.g., functional groups)
+- Define building blocks that can be used as optimization variables
+- Reuse common structural elements across designs
+
+### Lattices
+
+The `lattices` submodule implements common crystal lattice structures:
+
+- FCC, BCC, HCP, diamond, wurtzite, perovskite lattices
+- Methods for generating coordinates and neighbor relations
+- Tools for transforming between lattice representations
+
+### Transformations
+
+The `transform_func` module provides functions to:
+
+- Translate, rotate, and scale designs
+- Apply symmetry operations
+- Deform structures in controlled ways
+
+### Tilings and Patterns
+
+The `tiling` module helps with:
+
+- Creating regular arrangements of atoms
+- Building complex surfaces with specific patterns
+- Generating periodic structures
+
+## 🏗️ Building Optimization Models
+
+MatOpt uses `MaterialDescriptor` objects to represent variables, constraints, and objectives. A `MatOptModel` object holds lists of these descriptors. Several universal site descriptors are pre-defined:
+
+| Descriptor | Explanation                                                               |
+| ---------- | ------------------------------------------------------------------------- |
+| `Yik`      | Presence of a building block of type k at site i                          |
+| `Yi`       | Presence of any type of building block at site i                          |
+| `Xijkl`    | Presence of a building block of type k at site i and type l at site j     |
+| `Xij`      | Presence of any building block at sites i and j                           |
+| `Cikl`     | Count of neighbors of type l next to a building block of type k at site i |
+| `Ci`       | Count of any type of neighbors next to a building block at site i         |
+
+User-specified descriptors are defined by `DescriptorRule` objects with `Expr` expression objects:
+
+### Expression Types
+
+| Expression         | Purpose                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `LinearExpr`       | Multiplication and addition of coefficients to descriptors |
+| `SiteCombination`  | Summation of site contributions from two sites             |
+| `SumNeighborSites` | Summation of site contributions from all neighboring sites |
+| `SumNeighborBonds` | Summation of bond contributions to all neighboring sites   |
+| `SumSites`         | Summation across sites                                     |
+| `SumBonds`         | Summation across bonds                                     |
+| `SumSiteTypes`     | Summation across site types                                |
+| `SumBondTypes`     | Summation across bond types                                |
+| `SumSitesAndTypes` | Summation across sites and site types                      |
+| `SumBondsAndTypes` | Summation across bonds and bond types                      |
+| `SumConfs`         | Summation across conformation types                        |
+| `SumSitesAndConfs` | Summation across sites and conformation types              |
+
+### Descriptor Rules
+
+| Rule                     | Purpose                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `LessThan`               | Descriptor less than or equal to an expression                                  |
+| `EqualTo`                | Descriptor equal to an expression                                               |
+| `GreaterThan`            | Descriptor greater than or equal to an expression                               |
+| `FixedTo`                | Descriptor fixed to a scalar value                                              |
+| `PiecewiseLinear`        | Descriptor equal to the evaluation of a piecewise linear function               |
+| `Implies`                | Indicator descriptor that imposes other constraints if equal to 1               |
+| `NegImplies`             | Indicator descriptor that imposes other constraints if equal to 0               |
+| `ImpliesSiteCombination` | Indicator bond-indexed descriptor that imposes constraints on the two sites     |
+| `ImpliesNeighbors`       | Indicator site-indexed descriptor that imposes constraints on neighboring sites |
+
+## 📝 Example: Pt Nanocluster Design
+
+Once the model is fully specified, the user can optimize it in light of a chosen descriptor to serve as the objective to be maximized or minimized, as appropriate. Several functions are provided for users to choose from. The results of the optimization process will be loaded into Design objects automatically.
 
 ```python
 import numpy as np
@@ -242,23 +181,70 @@ m.addGlobalDescriptor(
 )
 m.addGlobalDescriptor("Size", bounds=(N, N), rules=EqualTo(SumSites(desc=m.Yi)))
 
-D = None
-try:
-    D = m.maximize(m.Ecoh, tilim=100, solver="neos-cplex")
-except:
-    print("MaOpt can not find usable solver (CPLEX or NEOS-CPLEX)")
-if D is not None:
-    D.toPDB("result.pdb")
+D = m.maximize(m.Ecoh, tilim=100, solver="neos-cplex")
 ```
 
-For more usage cases and detailed explanation and walkthrough, please check the [original repository](https://github.com/IDAES/idaes-pse/tree/main/idaes/apps/matopt). In each case, a Jupyter notebook with explanations as well as an equivalent Python script is provided.
+For more examples and detailed tutorials, check the [original repository](https://github.com/IDAES/idaes-pse/tree/main/idaes/apps/matopt).
 
-## Applications
+## 💾 Exporting Design Results
 
-- Hanselman, C.L. and Gounaris, C.E., 2016. [A mathematical optimization framework for the design of nanopatterned surfaces.](https://aiche.onlinelibrary.wiley.com/doi/full/10.1002/aic.15359) _AIChE Journal_, 62(9), pp.3250-3263.
-- Hanselman, C.L., Alfonso, D.R., Lekse, J.W., Matranga, C., Miller, D.C. and Gounaris, C.E., 2019. [A framework for optimizing oxygen vacancy formation in doped perovskites.](https://www.sciencedirect.com/science/article/pii/S0098135418310998) _Computers & Chemical Engineering_, 126, pp.168-177.
-- Hanselman, C.L., Zhong, W., Tran, K., Ulissi, Z.W. and Gounaris, C.E., 2019. [Optimization-based design of active and stable nanostructured surfaces.](https://pubs.acs.org/doi/abs/10.1021/acs.jpcc.9b08431) _The Journal of Physical Chemistry C_, 123(48), pp.29209-29218.
-- Isenberg, N.M., Taylor, M.G., Yan, Z., Hanselman, C.L., Mpourmpakis, G. and Gounaris, C.E., 2020. [Identification of optimally stable nanocluster geometries via mathematical optimization and density-functional theory.](https://pubs.rsc.org/en/content/articlelanding/2019/me/c9me00108e#!divAbstract) _Molecular Systems Design & Engineering_.
-- Yin, X., Isenberg, N.M., Hanselman, C.L., Dean, J.R., Mpourmpakis, G. and Gounaris, C.E., 2021. [Designing stable bimetallic nanoclusters via an iterative two-step optimization approach.](https://pubs.rsc.org/en/content/articlelanding/2021/ME/D1ME00027F) _Molecular Systems Design & Engineering_, 6(7), pp.545-557.
-- Yin, X. and Gounaris, C.E., 2022. [Search methods for inorganic materials crystal structure prediction.](https://doi.org/10.1016/j.coche.2021.100726) _Current Opinion in Chemical Engineering_, 35, p.100726.
-- Hanselman, C.L., Yin, X., Miller, D.C. and Gounaris, C.E., 2022. [MatOpt: A Python Package for Nanomaterials Design Using Discrete Optimization.](https://doi.org/10.1021/acs.jcim.1c00984) _Journal of Chemical Information and Modeling_, 62(2), pp.295-308.
+MatOpt provides several methods to export your optimized designs:
+
+```python
+# Assuming D is your optimized Design object from m.maximize() or m.minimize()
+
+# Export to common crystal structure formats
+D.toPDB("result.pdb")     # Export to Protein Data Bank format
+D.toXYZ("result.xyz")     # Export to XYZ format
+D.toCFG("result.cfg")     # Export to AtomEye configuration format
+D.toPOSCAR("result.vasp") # Export to VASP POSCAR format
+
+# Convert to pymatgen Structure for further analysis
+from pymatgen.core import Structure
+structure = D.to_pymatgen()  # Convert to pymatgen Structure object
+```
+
+## 📊 Exporting Optimization Models
+
+MatOpt allows you to export the underlying optimization models:
+
+```python
+# Create your model as usual
+m = MatOptModel(Canv, Atoms)
+# ... add descriptors and constraints ...
+
+# Export to LP format as standard Mixed-Integer Linear Program
+milp = m._make_pyomo_model(m.Ecoh, maximize=True)
+milp.write("milp.lp")
+
+# Export as Mixed-Integer Quadratic Constrained Program
+miqcqp = m._make_pyomo_model(m.Ecoh, maximize=True, formulation="miqcqp")
+miqcqp.write("miqcqp.lp")
+```
+
+### Integration with Quantum Computing Solvers
+
+```python
+# Using Qiskit Optimization
+# Note: Install with `pip install 'qiskit-optimization[cplex]' docplex cplex`
+from qiskit_optimization import QuadraticProgram
+qiskit_qp = QuadraticProgram()
+qiskit_qp.read_from_lp_file("miqcqp.lp")
+# Now you can solve with Qiskit's quantum optimization algorithms
+
+# Using D-Wave's dimod
+# Note: Install with `pip install dimod`
+import dimod
+with open("miqcqp.lp", "rb") as f:
+    cqm = dimod.lp.load(f)
+# Now you can solve with D-Wave's quantum annealing hardware
+```
+
+## 📚 Applications
+
+- Hanselman, C.L. and Gounaris, C.E., 2016. [A mathematical optimization framework for the design of nanopatterned surfaces.](https://aiche.onlinelibrary.wiley.com/doi/full/10.1002/aic.15359) _AIChE Journal_
+- Hanselman, C.L. et al., 2019. [A framework for optimizing oxygen vacancy formation in doped perovskites.](https://www.sciencedirect.com/science/article/pii/S0098135418310998) _Computers & Chemical Engineering_
+- Hanselman, C.L. et al., 2019. [Optimization-based design of active and stable nanostructured surfaces.](https://pubs.acs.org/doi/abs/10.1021/acs.jpcc.9b08431) _The Journal of Physical Chemistry C_
+- Isenberg, N.M. et al., 2020. [Identification of optimally stable nanocluster geometries via mathematical optimization and density-functional theory.](https://pubs.rsc.org/en/content/articlelanding/2019/me/c9me00108e#!divAbstract) _Molecular Systems Design & Engineering_
+- Yin, X. et al., 2021. [Designing stable bimetallic nanoclusters via an iterative two-step optimization approach.](https://pubs.rsc.org/en/content/articlelanding/2021/ME/D1ME00027F) _Molecular Systems Design & Engineering_
+- Yin, X. and Gounaris, C.E., 2022. [Search methods for inorganic materials crystal structure prediction.](https://doi.org/10.1016/j.coche.2021.100726) _Current Opinion in Chemical Engineering_
