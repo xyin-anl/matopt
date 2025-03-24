@@ -245,6 +245,7 @@ def addConsForGeneralVars(m, formulation="milp"):
     Encodes variables in a chain from derived to most basic:
         Ci   <- Xij   <- Yi
         Cikl <- Xijkl <- Yik
+        Zn   <- Yi    (for cluster descriptors)
 
     Also can bridge from type-specific to type-agnostic variables:
         Ci  <- Cikl
@@ -336,6 +337,19 @@ def addConsForGeneralVars(m, formulation="milp"):
     # Still need to restrict Yik to be SOS1
     if len(m.K) > 1:
         _addConsYikSOS1(m)
+
+    # Define Zn
+    if len(m.Zn) > 0 and hasattr(m, "clusters") and len(m.clusters) > 0:
+        # Determine if we have a site-only cluster or a site-type cluster
+        # by checking the type of the first element in the first cluster
+        first_item = m.clusters[0][0] if len(m.clusters[0]) > 0 else None
+
+        if isinstance(first_item, tuple) and len(first_item) == 2:
+            # Site-type clusters: [(i1, k1), (i2, k2), ...]
+            _addConsZnFromYik(m)
+        else:
+            # Site-only clusters: [i1, i2, i3, ...]
+            _addConsZnFromYi(m)
 
 
 def fixYik(m, i, k, val):
@@ -1607,3 +1621,58 @@ def addObjMaxSumZic(m, Alphas=None, ISubset=None, ConfSubset=None):
         expr=sum(Alphas[c] * m.Zic[i, c] for i in ISubset for c in ConfSubset),
         sense=maximize,
     )
+
+
+def _addConsZnFromYi(m):
+    """
+    Enforce: Zn[n] = 1 iff all sites in cluster n have Yi[i] = 1.
+
+    Args:
+        m (ConcreteModel): The Pyomo model, which must have:
+          - m.Zn : Var indexed by clusters
+          - m.Yi : Var indexed by sites
+          - m.clusters : list of list of sites, each representing a cluster
+
+    This function adds linear constraints:
+        Zn[n] <= Yi[i]  for each i in that cluster
+        Zn[n] >= sum(Yi[i]) - (len(cluster)-1)
+    similar to how we do Xij from Yi, Xijkl from Yik, etc.
+    """
+    m.AssignZnFromYiLE = ConstraintList()
+    m.AssignZnFromYiGE = ConstraintList()
+
+    for n, site_list in enumerate(m.clusters):
+        # 1) Zn[n] <= Yi[i] for each site i in that cluster
+        for i_site in site_list:
+            m.AssignZnFromYiLE.add(m.Zn[n] <= m.Yi[i_site])
+
+        # 2) Zn[n] >= sum(Yi[i_site]) - (len(site_list) - 1)
+        lhs_sum = sum(m.Yi[i_site] for i_site in site_list)
+        m.AssignZnFromYiGE.add(m.Zn[n] >= lhs_sum - (len(site_list) - 1))
+
+
+def _addConsZnFromYik(m):
+    """
+    Enforce: Zn[n] = 1 iff all site-type pairs in cluster n have Yik[i,k] = 1.
+
+    Args:
+        m (ConcreteModel): The Pyomo model, which must have:
+          - m.Zn : Var indexed by clusters
+          - m.Yik : Var indexed by site and type
+          - m.clusters : list of list of (site,type) pairs, each representing a cluster
+
+    This function adds linear constraints:
+        Zn[n] <= Yik[i,k]  for each (i,k) in that cluster
+        Zn[n] >= sum(Yik[i_site,k_type]) - (len(pair_list) - 1)
+    """
+    m.AssignZnFromYikLE = ConstraintList()
+    m.AssignZnFromYikGE = ConstraintList()
+
+    for n, pair_list in enumerate(m.clusters):
+        # 1) Zn[n] <= Yik[i,k] for each site-type pair (i,k) in that cluster
+        for i_site, k_type in pair_list:
+            m.AssignZnFromYikLE.add(m.Zn[n] <= m.Yik[i_site, k_type])
+
+        # 2) Zn[n] >= sum(Yik[i_site,k_type]) - (len(pair_list) - 1)
+        lhs_sum = sum(m.Yik[i_site, k_type] for i_site, k_type in pair_list)
+        m.AssignZnFromYikGE.add(m.Zn[n] >= lhs_sum - (len(pair_list) - 1))

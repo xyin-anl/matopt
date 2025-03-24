@@ -108,6 +108,7 @@ MatOpt uses `MaterialDescriptor` objects to represent variables, constraints, an
 | `Xij`      | Presence of any building block at sites i and j                           |
 | `Cikl`     | Count of neighbors of type l next to a building block of type k at site i |
 | `Ci`       | Count of any type of neighbors next to a building block at site i         |
+| `Zn`       | Presense of the n-th cluster, as specified by the user                    |
 
 User-specified descriptors are defined by `DescriptorRule` objects with `Expr` expression objects:
 
@@ -127,6 +128,8 @@ User-specified descriptors are defined by `DescriptorRule` objects with `Expr` e
 | `SumBondsAndTypes` | Summation across bonds and bond types                      |
 | `SumConfs`         | Summation across conformation types                        |
 | `SumSitesAndConfs` | Summation across sites and conformation types              |
+| `SumClusters`      | Summation across clusters (from cluster expansion)         |
+| `SumExpressions`   | Summation of a list of expressions                         |
 
 ### Descriptor Rules
 
@@ -184,7 +187,7 @@ m.addGlobalDescriptor("Size", bounds=(N, N), rules=EqualTo(SumSites(desc=m.Yi)))
 D = m.maximize(m.Ecoh, tilim=100, solver="neos-cplex")
 ```
 
-For more examples and detailed tutorials, check the [original repository](https://github.com/IDAES/idaes-pse/tree/main/idaes/apps/matopt).
+For more examples and detailed tutorials, check the `examples` folder or the [original repository](https://github.com/IDAES/idaes-pse/tree/main/idaes/apps/matopt).
 
 ## 💾 Exporting Design Results
 

@@ -23,6 +23,7 @@ class MaterialDescriptor(IndexedElem):
         bounds (tuple/dict/func): If tuple, the lower and upper bounds on the
             descriptor values across all indices. If dict, the bounds can be
             individually set for each index.
+        clusters (list<int>): The clusters that the descriptor is indexed over.
 
     See ``IndexedElem`` for more information on indexing.
     See ``DescriptorRule`` for information on defining descriptors.
@@ -41,7 +42,8 @@ class MaterialDescriptor(IndexedElem):
         integer=False,
         binary=False,
         rules=None,
-        **kwargs
+        clusters=None,
+        **kwargs,
     ):
         """Standard constructor for material descriptors.
 
@@ -63,6 +65,7 @@ class MaterialDescriptor(IndexedElem):
         binary (bool): Flag to indicate if the descriptor is boolean.
         rules (list<DescriptorRules>): List of rules to define and constrain
             the material descriptor design space.
+        clusters (list<int>): The clusters that the descriptor is indexed over.
         **kwargs: Optional, index information passed to IndexedElem if
             interested in a subset of indices.
             Possible choices: sites, bonds, site_types, bond_types, confs.
@@ -78,7 +81,17 @@ class MaterialDescriptor(IndexedElem):
         self._rules = rules if type(rules) is list else [rules]
         self._bounds = bounds
         self._pyomo_var = None  # Will be set by MatOptModel._make_pyomo_model
-        IndexedElem.__init__(self, **kwargs)
+
+        # Pass dimension arguments to the IndexedElem constructor with explicit clusters
+        IndexedElem.__init__(
+            self,
+            sites=kwargs.pop("sites", None),
+            bonds=kwargs.pop("bonds", None),
+            site_types=kwargs.pop("site_types", None),
+            bond_types=kwargs.pop("bond_types", None),
+            confs=kwargs.pop("confs", None),
+            clusters=clusters,
+        )
 
     # === AUXILIARY METHODS
     def _fix_pyomo_var_by_rule(self, r, m):

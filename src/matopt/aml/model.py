@@ -23,10 +23,12 @@ class BaseModel(ABC):
             Note: This list does not need to include a void-atom type. We use
             'None' to represent the absence of any building block at a given site.
         confDs (list<``Design``>): The list of conformations to consider.
+        clusters (list<list<int>> or list<list<(int,BBlock)>>): Optional, the list of clusters, where each cluster
+            is a list of site indices. Used to define cluster-level descriptors.
     """
 
     # === STANDARD CONSTRUCTOR
-    def __init__(self, canv, atoms=None, confDs=None, **kwargs):
+    def __init__(self, canv, atoms=None, confDs=None, clusters=None, **kwargs):
         """Standard constructor for materials optimization problems.
 
         Args:
@@ -35,10 +37,13 @@ class BaseModel(ABC):
             Note: This list does not need to include a void-atom type. We use
             'None' to represent the absence of any building block at a given site.
         confDs (list<``Design``>): The list of conformations to consider.
+        clusters (list<list<int>> or list<list<(int,BBlock)>>): Optional, the list of clusters, where each cluster
+            is a list of site indices. Used to define cluster-level descriptors.
         """
         self._canv = canv
         self._atoms = atoms
         self._confDs = confDs
+        self._clusters = clusters
         self._descriptors = []
         self.addSitesDescriptor("Yi", binary=True, rules=None)
         self.addBondsDescriptor("Xij", binary=True, rules=None)
@@ -47,6 +52,10 @@ class BaseModel(ABC):
         self.addBondsTypesDescriptor("Xijkl", binary=True, rules=None)
         self.addNeighborsTypesDescriptor("Cikl", integer=True, rules=None)
         self.addSitesConfsDescriptor("Zic", binary=True, rules=None)
+
+        # If clusters are defined, add the cluster descriptor
+        if self._clusters is not None and len(self._clusters) > 0:
+            self.addClustersDescriptor("Zn", binary=True, rules=None)
 
     # === MANIPULATION METHODS
     def addGlobalDescriptor(
@@ -456,6 +465,51 @@ class BaseModel(ABC):
         setattr(self, name, Desc)
         self._descriptors.append(Desc)
 
+    def addClustersDescriptor(
+        self,
+        name,
+        clusters=None,
+        bounds=(None, None),
+        integer=False,
+        binary=False,
+        rules=None,
+    ):
+        """Method to add a cluster-indexed descriptor to the model.
+
+        Args:
+            name (string): A unique name.
+            clusters (list<int>): Optional, subset of cluster indices to index the new
+                descriptor over.
+                Default: None (i.e., all clusters defined in the model are considered)
+            bounds (tuple/dict/func): If tuple, the lower and upper bounds on the
+                descriptor values across all indices. If dict, the bounds can be
+                individually set for each index. Otherwise, advanced users can
+                specify a function.
+            integer (bool): Flag to indicate if the descriptor is integer.
+            binary (bool): Flag to indicate if the descriptor is boolean.
+            rules (list<DescriptorRules>): List of rules to define and constrain
+                the material descriptor design space.
+        """
+        assert not hasattr(self, name)
+        assert (
+            self._clusters is not None
+        ), "Cannot add cluster descriptor without clusters defined"
+
+        clusters = (
+            clusters if clusters is not None else list(range(len(self._clusters)))
+        )
+        Desc = MaterialDescriptor(
+            name=name,
+            canv=self.canv,
+            clusters=clusters,
+            bounds=bounds,
+            integer=integer,
+            binary=binary,
+            rules=rules,
+        )
+        setattr(self, name, Desc)
+        self._descriptors.append(Desc)
+
     # === BASIC QUERY METHODS
     @property
     def canv(self):
@@ -470,6 +524,10 @@ class BaseModel(ABC):
         return self._confDs
 
     @property
+    def clusters(self):
+        return self._clusters
+
+    @property
     def descriptors(self):
         return self._descriptors
 
@@ -478,7 +536,7 @@ class BaseModel(ABC):
         pass
 
 
-def makeMyPyomoBaseModel(C, Atoms=None, Confs=None):
+def makeMyPyomoBaseModel(C, Atoms=None, Confs=None, clusters=None):
     """
     Make the Pyomo model for a basic materials design problem.
 
@@ -504,6 +562,9 @@ def makeMyPyomoBaseModel(C, Atoms=None, Confs=None):
     Conformation-Specific Descriptors:
         Zic: Presence of conformation c at site i
 
+    Cluster-Specific Descriptors:
+        Zn: Presence of building block at all sites in cluster n
+
     The basic variables and atom-specific variables above are
     automatically encoded by calling addConsForGeneralVars.
     The descriptor variables Zi and Zic must be explicitly constrained.
@@ -515,6 +576,7 @@ def makeMyPyomoBaseModel(C, Atoms=None, Confs=None):
     * addConsZicFromYiLifted
     * addConsZicFromYik
     * addConsZicFromYikLifted
+    * addConsZnFromYi
 
     Additional variables and constraints  can be created and managed on
     a model-specific level.
@@ -528,6 +590,9 @@ def makeMyPyomoBaseModel(C, Atoms=None, Confs=None):
         Confs (list<Design>): Optional, the set of conformations to
             potentially use for indicator variables.
             (Default value = None)
+        clusters (list<list<int>> or list<list<(int,BBlock)>>): Optional, the list of clusters, where each cluster
+            is a list of site indices. Used to define cluster-level descriptors.
+            (Default value = None)
 
     Returns:
         (ConcreteModel): Pyomo model with basic sets and variables initialized.
@@ -539,6 +604,7 @@ def makeMyPyomoBaseModel(C, Atoms=None, Confs=None):
     m.Ni = C.NeighborhoodIndexes
     m.Atoms = Atoms
     m.Confs = Confs
+    m.clusters = clusters
     # Adding Basic Sets
     m.nI = len(C)
     m.I = Set(initialize=range(m.nI), ordered=True)
@@ -568,6 +634,11 @@ def makeMyPyomoBaseModel(C, Atoms=None, Confs=None):
     m.nC = len(Confs) if Confs is not None else 0
     m.C = Set(initialize=range(m.nC))
     m.Zic = Var(m.I, m.C, domain=Binary, dense=False)
+
+    # Adding clusters set
+    m.nN = len(clusters) if clusters is not None else 0
+    m.N = Set(initialize=range(m.nN))
+    m.Zn = Var(m.N, domain=Binary, dense=False)
     return m
 
 
@@ -790,7 +861,10 @@ class MatOptModel(BaseModel):
         Returns:
             (ConcreteModel) Pyomo model object.
         """
-        m = makeMyPyomoBaseModel(self.canv, Atoms=self.atoms, Confs=self.confDs)
+        m = makeMyPyomoBaseModel(
+            self.canv, Atoms=self.atoms, Confs=self.confDs, clusters=self.clusters
+        )
+
         self.Yi._pyomo_var = m.Yi
         self.Xij._pyomo_var = m.Xij
         self.Ci._pyomo_var = m.Ci
@@ -798,8 +872,20 @@ class MatOptModel(BaseModel):
         self.Xijkl._pyomo_var = m.Xijkl
         self.Cikl._pyomo_var = m.Cikl
         self.Zic._pyomo_var = m.Zic
+        if self.clusters is not None and hasattr(self, "Zn"):
+            self.Zn._pyomo_var = m.Zn
+
         for desc in self._descriptors:
-            if desc.name not in ("Yik", "Yi", "Xijkl", "Xij", "Cikl", "Ci", "Zic"):
+            if desc.name not in (
+                "Yik",
+                "Yi",
+                "Xijkl",
+                "Xij",
+                "Cikl",
+                "Ci",
+                "Zic",
+                "Zn",
+            ):
                 v = Var(
                     *desc.index_sets,
                     domain=(

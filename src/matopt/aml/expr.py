@@ -16,11 +16,18 @@ class IndexedElem(object):
         site_types (list<int>): The site types that the object is indexed over
         bond_types (list<int>): The bond types that the object is indexed over
         confs (list<int>): The conformations that the object is indexed over
+        clusters (list<int>): The clusters that the object is indexed over
     """
 
     # === STANDARD CONSTRUCTOR
     def __init__(
-        self, sites=None, bonds=None, site_types=None, bond_types=None, confs=None
+        self,
+        sites=None,
+        bonds=None,
+        site_types=None,
+        bond_types=None,
+        confs=None,
+        clusters=None,
     ):
         """Standard constructor of IndexedElem.
 
@@ -33,6 +40,7 @@ class IndexedElem(object):
             bond_types (list<tuple<BBlock,BBlock>>): The bond types that the
                 object is indexed over
             confs (list<int>): The conformations that the object is indexed over
+            clusters (list<int>): The clusters that the object is indexed over
         """
 
         self._sites = sites
@@ -40,6 +48,7 @@ class IndexedElem(object):
         self._site_types = site_types
         self._bond_types = bond_types
         self._confs = confs
+        self._clusters = clusters
 
     # === CONSTRUCTOR - From combinations of other IndexedElem objects
     @classmethod
@@ -113,12 +122,17 @@ class IndexedElem(object):
             confs = list(set(LHS.confs) & set(RHS.confs))
         else:
             confs = LHS.confs if LHS.confs is not None else RHS.confs
+        if LHS.clusters is not None and RHS.clusters is not None:
+            clusters = list(set(LHS.clusters) & set(RHS.clusters))
+        else:
+            clusters = LHS.clusters if LHS.clusters is not None else RHS.clusters
         return cls(
             sites=sites,
             bonds=bonds,
             site_types=site_types,
             bond_types=bond_types,
             confs=confs,
+            clusters=clusters,
         )
 
     def mask(self, index, Comb):
@@ -155,6 +169,9 @@ class IndexedElem(object):
             k, l, *index = index
         if Comb.confs is not None:
             c, *index = index
+        if Comb.clusters is not None:
+            n, *index = index
+
         result = []
         if self.sites is not None:
             result.append(i)
@@ -168,6 +185,9 @@ class IndexedElem(object):
             result.append(l)
         if self.confs is not None:
             result.append(c)
+        if self.clusters is not None:
+            result.append(n)
+
         if not result:
             result = [None]
         return tuple(result)
@@ -186,6 +206,7 @@ class IndexedElem(object):
             self.site_types is not None,
             self.bond_types is not None,
             self.confs is not None,
+            self.clusters is not None,
         )
 
     @property
@@ -208,6 +229,7 @@ class IndexedElem(object):
                 self.site_types,
                 self.bond_types,
                 self.confs,
+                self.clusters,
             )
             if s is not None
         ]
@@ -229,6 +251,7 @@ class IndexedElem(object):
             "site_types": self.site_types,
             "bond_types": self.bond_types,
             "confs": self.confs,
+            "clusters": self.clusters,
         }
 
     @property
@@ -255,6 +278,11 @@ class IndexedElem(object):
     def confs(self):
         """List of conformation types relevant to this object."""
         return self._confs
+
+    @property
+    def clusters(self):
+        """List of cluster indices relevant to this object."""
+        return self._clusters
 
     def keys(self):
         """Method creating a generator for the keys relevant to this object.
@@ -414,6 +442,50 @@ class LinearExpr(Expr):
         return result
 
 
+class SumExpressions(Expr):
+    """A class for representing summations of expressions.
+
+    Attributes:
+        exprs (list<Expr>): expressions to sum
+        coefs (list<float>): coefficients for each expression
+        **kwargs: additional keyword arguments
+    """
+
+    def __init__(self, exprs, coefs=None, **kwargs):
+        """Standard constructor for SumExpressions.
+
+        Args:
+            exprs (list<Expr>): expressions to sum
+            coefs (list<float>): coefficients for each expression
+            **kwargs: additional keyword arguments
+        """
+        Comb = IndexedElem.fromComb(*exprs)
+        kwargs = {**Comb.index_dict, **kwargs}
+
+        super().__init__(**kwargs)
+        self.exprs = exprs
+        if coefs is None:
+            self.coefs = [1.0] * len(exprs)
+        else:
+            self.coefs = coefs
+
+    def _pyomo_expr(self, index=None):
+        """Interface for generating Pyomo expressions.
+
+        Args:
+            index (list): Optional, index to to create an instance of a Pyomo
+                expression. In the case of a scalar, the valid index is None.
+
+        Returns:
+            An instance of a Pyomo expression.
+        """
+        total = 0
+        for expr, coef in zip(self.exprs, self.coefs):
+            new_index = expr.mask(index, IndexedElem.fromComb(self, expr))
+            total += coef * expr._pyomo_expr(new_index)
+        return total
+
+
 class SiteCombination(Expr):
     """A class for representing summations of descriptors at two sites.
 
@@ -437,7 +509,7 @@ class SiteCombination(Expr):
         descj=None,
         offset=0.0,
         symmetric_bonds=False,
-        **kwargs
+        **kwargs,
     ):
         """Standard constructor for site combination expressions.
 
@@ -954,7 +1026,7 @@ class SumSitesAndTypes(Expr):
         offset=0.0,
         sites_to_sum=None,
         site_types_to_sum=None,
-        **kwargs
+        **kwargs,
     ):
         """Standard constructor for summation of site contributions.
 
@@ -1033,7 +1105,7 @@ class SumBondsAndTypes(Expr):
         offset=0.0,
         bonds_to_sum=None,
         bond_types_to_sum=None,
-        **kwargs
+        **kwargs,
     ):
         """Standard constructor for summation of contributions by bond-type.
 
@@ -1225,4 +1297,69 @@ class SumSitesAndConfs(Expr):
                     )
                     else self.coefs[(i, c, *index)]
                 ) * self.Zic._pyomo_var[(i, c, *index)]
+        return result
+
+
+class SumClusters(Expr):
+    """A class for expressions formed by summation over cluster indices.
+
+    Attributes:
+        desc (Descriptor/Expr): descriptors or expressions to sum over
+        coefs (float/list<float>): coefficients to multiply contributions
+            from each cluster
+        offset (float): coefficient to add to the expression
+        clusters_to_sum (list<int>): clusters to consider in the summation
+            (index information inherited from IndexedElem)
+    """
+
+    # === STANDARD CONSTRUCTOR
+    def __init__(self, desc, coefs=1.0, offset=0.0, clusters_to_sum=None, **kwargs):
+        """Standard constructor for summation of cluster contributions.
+
+        Args:
+            desc (Descriptor): descriptors or expressions to sum across all clusters
+            coefs (float/list<float>): Optional, coefficients to multiple each
+                cluster term by. Default=1.0
+            offset (float): Optional, coefficient to add to the expression.
+                Default=0.0
+            clusters_to_sum (list<int>): Optional, subset of clusters to sum.
+                Default=None, meaning all clusters in the desc object are considered.
+            **kwargs: Optional, index information passed to IndexedElem if
+                interested in a subset of indices
+                Possible choices: sites, bonds, site_types, bond_types, confs.
+        """
+        self.desc = desc
+        self.coefs = coefs
+        self.offset = offset
+        self.clusters_to_sum = (
+            clusters_to_sum if clusters_to_sum is not None else desc.clusters
+        )
+        kwargs = {**desc.index_dict, **kwargs}
+        kwargs.pop("clusters", None)  # Remove clusters from indexing
+        Expr.__init__(self, **kwargs)
+
+    # === PROPERTY EVALUATION METHODS
+    def _pyomo_expr(self, index=None):
+        """Interface for generating Pyomo expressions.
+
+        Args:
+            index (list): Optional, index to to create an instance of a Pyomo
+                expression. In the case of a scalar, the valid index is None.
+
+        Returns:
+            An instance of a Pyomo expression.
+        """
+        if index == (None,):
+            index = ()
+        result = self.offset
+        for cl in self.clusters_to_sum:
+            result += (
+                self.coefs
+                if (
+                    type(self.coefs) is float
+                    or type(self.coefs) is int
+                    or type(self.coefs) is SimpleParam
+                )
+                else self.coefs[cl]
+            ) * self.desc._pyomo_var[(cl, *index)]
         return result
