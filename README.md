@@ -187,7 +187,7 @@ m.addGlobalDescriptor("Size", bounds=(N, N), rules=EqualTo(SumSites(desc=m.Yi)))
 D = m.maximize(m.Ecoh, tilim=100, solver="neos-cplex")
 ```
 
-For more examples and detailed tutorials, check the `examples` folder or the [original repository](https://github.com/IDAES/idaes-pse/tree/main/idaes/apps/matopt).
+For more examples, check the [`MatOpt-bench`](https://github.com/xyin-anl/MatOpt-bench) repository.
 
 ## 💾 Exporting Design Results
 
