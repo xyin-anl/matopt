@@ -24,6 +24,10 @@ _SOLVER_ALIASES = {
 }
 
 
+# Accept Pyomo interface names for the solvers configured above.
+_SOLVER_NAMES = {v: k for k, v in _SOLVER_ALIASES.items()}
+
+
 def _pick_default_solver():
     """Return the first available solver, preferring commercial ones."""
     for name in ("cplex", "gurobi", "highs", "scip"):
@@ -775,7 +779,8 @@ class MatOptModel(BaseModel):
                 Default: None (i.e., solver default; only used by CPLEX)
             solver (str): Solver choice. "auto" picks the first available of
                 cplex, gurobi, highs, scip. Also accepts "neos-cplex" or any
-                Pyomo solver name. Default: auto
+                other Pyomo solver name, in which case tilim and zero-gap
+                settings are not applied. Default: auto
 
         Returns:
             (``Design``/list<``Design``>) Optimal design or designs, depending
@@ -846,7 +851,8 @@ class MatOptModel(BaseModel):
                 Default: None (i.e., solver default; only used by CPLEX)
             solver (str): Solver choice. "auto" picks the first available of
                 cplex, gurobi, highs, scip. Also accepts "neos-cplex" or any
-                Pyomo solver name. Default: auto
+                other Pyomo solver name, in which case tilim and zero-gap
+                settings are not applied. Default: auto
 
         Returns:
             (list<``Design``>) A list of optimal Designs in order of decreasing
@@ -995,6 +1001,13 @@ class MatOptModel(BaseModel):
         """
         if solver == "auto":
             solver = _pick_default_solver()
+        solver = _SOLVER_NAMES.get(solver, solver)
+        # NOTE: Clear values left over from a previous solve (e.g., in
+        #       populate) so that a solve that ends without an incumbent
+        #       cannot be mistaken for one that found the old design again.
+        for v in self._pyomo_m.component_data_objects(Var):
+            if not v.fixed:
+                v.set_value(None, skip_validation=True)
         res = None
         if solver == "neos-cplex":
             with SolverManagerFactory("neos") as manager:
@@ -1018,50 +1031,48 @@ class MatOptModel(BaseModel):
                     "{}.".format(solver, sorted(_SOLVER_ALIASES))
                 )
             opt.options.update(_solver_options(solver, tilim, trelim))
-            try:
+            if solver == "highs":
+                # NOTE: The HiGHS interface loads solutions itself and raises
+                #       when no feasible solution was found.
+                try:
+                    res = opt.solve(
+                        self._pyomo_m,
+                        tee=tee,
+                        symbolic_solver_labels=True,
+                        keepfiles=keepfiles,
+                    )
+                except (RuntimeError, NoFeasibleSolutionError) as e:
+                    if "feasible solution was not found" not in str(e):
+                        raise
+                    if disp > 0:
+                        print("No feasible solution found.")
+                    return None
+            else:
+                # NOTE: Load manually so that results without a solution
+                #       (e.g., a time limit before any incumbent) do not raise.
                 res = opt.solve(
                     self._pyomo_m,
                     tee=tee,
                     symbolic_solver_labels=True,
                     keepfiles=keepfiles,
+                    load_solutions=False,
                 )
-            except (RuntimeError, NoFeasibleSolutionError) as e:
-                # NOTE: The HiGHS interfaces raise instead of returning a
-                #       result when no feasible solution was found.
-                if disp > 0:
-                    print("No feasible solution found: {}".format(e))
-                return None
+                if len(res.solution) > 0 and res.solution.status in (
+                    SolutionStatus.optimal,
+                    SolutionStatus.feasible,
+                    SolutionStatus.bestSoFar,
+                    SolutionStatus.globallyOptimal,
+                    SolutionStatus.locallyOptimal,
+                    SolutionStatus.unknown,
+                ):
+                    self._pyomo_m.solutions.load_from(res)
         if res is None:
             return None
         solver_status = res.solver.status
         solver_term = res.solver.termination_condition
-        if len(res.solution) > 0:
-            soln_status = res.solution.status
-            has_solution = soln_status in (
-                SolutionStatus.optimal,
-                SolutionStatus.feasible,
-                SolutionStatus.bestSoFar,
-                SolutionStatus.globallyOptimal,
-                SolutionStatus.locallyOptimal,
-            )
-            # NOTE: The block below is a hack to get around the fact that Pyomo
-            #       solution statuses are not flagged correctly all the time. If
-            #       solution status was unknown (but actually optimal or feasible)
-            #       then this should (hopefully) flag the solution as available
-            if soln_status == SolutionStatus.unknown:
-                value(self._pyomo_m.obj)
-                has_solution = True
-        else:
-            # NOTE: Some interfaces (e.g., HiGHS) load solutions directly into
-            #       the model without populating res.solution. Infeasible
-            #       outcomes are caught above, so a loaded solution exists
-            #       unless the solver reported infeasibility or an error.
-            has_solution = solver_term not in (
-                TerminationCondition.infeasible,
-                TerminationCondition.infeasibleOrUnbounded,
-                TerminationCondition.unbounded,
-                TerminationCondition.error,
-            ) and (value(self._pyomo_m.obj, exception=False) is not None)
+        # NOTE: Values were cleared before solving, so the objective can only
+        #       be evaluated if this solve loaded a solution.
+        has_solution = value(self._pyomo_m.obj, exception=False) is not None
 
         def dispPrint(*args):
             if disp > 0:
