@@ -2,11 +2,62 @@ from abc import ABC, abstractmethod
 
 from pyomo.environ import *
 from pyomo.opt.results import SolutionStatus
+from pyomo.common.errors import ApplicationError
+
+try:
+    from pyomo.contrib.solver.common.util import NoFeasibleSolutionError
+except ImportError:  # older Pyomo
+    NoFeasibleSolutionError = RuntimeError
 
 from matopt.materials.design import Design
 from matopt.aml.desc import MaterialDescriptor
 from matopt.aml.rule import Disallow, FixedTo
 from matopt.aml.util import addConsForGeneralVars, setDesignFromModel
+
+
+# Map MatOpt solver names to Pyomo SolverFactory names.
+_SOLVER_ALIASES = {
+    "cplex": "cplex",
+    "gurobi": "gurobi",
+    "highs": "appsi_highs",
+    "scip": "scip",
+}
+
+
+def _pick_default_solver():
+    """Return the first available solver, preferring commercial ones."""
+    for name in ("cplex", "gurobi", "highs", "scip"):
+        if SolverFactory(_SOLVER_ALIASES[name]).available(exception_flag=False):
+            return name
+    raise ApplicationError(
+        "No MILP solver found. Install the open-source HiGHS solver with "
+        "'pip install highspy', or use solver='neos-cplex'."
+    )
+
+
+def _solver_options(solver, tilim, trelim):
+    """Return solver options for exact optimality (zero gap) and limits."""
+    if solver == "cplex":
+        opts = {"mip_tolerances_absmipgap": 0.0, "mip_tolerances_mipgap": 0.0}
+        if tilim is not None:
+            opts["timelimit"] = tilim
+        if trelim is not None:
+            opts["mip_limits_treememory"] = trelim
+    elif solver == "gurobi":
+        opts = {"MIPGap": 0.0, "MIPGapAbs": 0.0}
+        if tilim is not None:
+            opts["TimeLimit"] = tilim
+    elif solver == "highs":
+        opts = {"mip_rel_gap": 0.0, "mip_abs_gap": 0.0}
+        if tilim is not None:
+            opts["time_limit"] = float(tilim)
+    elif solver == "scip":
+        opts = {"limits/gap": 0.0, "limits/absgap": 0.0}
+        if tilim is not None:
+            opts["limits/time"] = tilim
+    else:
+        opts = {}
+    return opts
 
 
 class BaseModel(ABC):
@@ -656,7 +707,7 @@ class MatOptModel(BaseModel):
 
         Raises:
             ``pyomo.common.errors.ApplicationError`` if MatOpt can not find
-            usable solver (CPLEX or NEOS-CPLEX)
+            usable solver
 
         See ``MatOptModel.optimize`` method for details.
         """
@@ -675,7 +726,7 @@ class MatOptModel(BaseModel):
 
         Raises:
             ``pyomo.common.errors.ApplicationError`` if MatOpt can not find usable
-            solver (CPLEX or NEOS-CPLEX)
+            solver
 
         See ``MatOptModel.optimize`` method for details.
         """
@@ -691,13 +742,13 @@ class MatOptModel(BaseModel):
         keepfiles=False,
         tilim=3600,
         trelim=None,
-        solver="cplex",
+        solver="auto",
     ):
         """Method to create and optimize the materials design problem.
 
         This method automatically creates a new optimization model every
         time it is called. Then, it solves the model via Pyomo with the
-        CPLEX solver.
+        chosen MILP solver.
 
         If multiple solutions (called a 'solution pool') are desired, then
         the nSolns argument can be provided and the populate method will
@@ -721,9 +772,10 @@ class MatOptModel(BaseModel):
             tilim (float): Optional, solver time limit (in seconds).
                 Default: 3600
             trelim (float): Optional, solver tree memory limit (in MB).
-                Default: None (i.e., Pyomo/CPLEX default)
-            solver (str): Solver choice. Currently only cplex or neos-cplex are supported
-                Default: cplex
+                Default: None (i.e., solver default; only used by CPLEX)
+            solver (str): Solver choice. "auto" picks the first available of
+                cplex, gurobi, highs, scip. Also accepts "neos-cplex" or any
+                Pyomo solver name. Default: auto
 
         Returns:
             (``Design``/list<``Design``>) Optimal design or designs, depending
@@ -731,7 +783,7 @@ class MatOptModel(BaseModel):
 
         Raises:
             ``pyomo.common.errors.ApplicationError`` if MatOpt can not find
-            usable solver (CPLEX or NEOS-CPLEX)
+            usable solver
         """
         if nSolns > 1:
             return self.populate(
@@ -759,13 +811,13 @@ class MatOptModel(BaseModel):
         keepfiles=False,
         tilim=3600,
         trelim=None,
-        solver="cplex",
+        solver="auto",
     ):
         """Method to a pool of solutions that optimize the material model.
 
         This method automatically creates a new optimization model every
         time it is called. Then, it solves the model via Pyomo with the
-        CPLEX solver.
+        chosen MILP solver.
 
         The populate method iteratively solves the model, interprets the
         solution as a Design object, creates a constraint to disallow that
@@ -791,9 +843,10 @@ class MatOptModel(BaseModel):
             tilim (float): Optional, solver time limit (in seconds).
                 Default: 3600
             trelim (float): Optional, solver tree memory limit (in MB).
-                Default: None (i.e., Pyomo/CPLEX default)
-            solver (str): Solver choice. Currently only cplex or neos-cplex are
-                supported Default: cplex
+                Default: None (i.e., solver default; only used by CPLEX)
+            solver (str): Solver choice. "auto" picks the first available of
+                cplex, gurobi, highs, scip. Also accepts "neos-cplex" or any
+                Pyomo solver name. Default: auto
 
         Returns:
             (list<``Design``>) A list of optimal Designs in order of decreasing
@@ -801,7 +854,7 @@ class MatOptModel(BaseModel):
 
         Raises:
             ``pyomo.common.errors.ApplicationError`` if MatOpt can not find
-            usable solver (CPLEX or NEOS-CPLEX)
+            usable solver
         """
         self._pyomo_m = self._make_pyomo_model(func, sense)
         self._pyomo_m.iSolns = Set(initialize=list(range(nSolns)))
@@ -931,8 +984,7 @@ class MatOptModel(BaseModel):
             keepfiles (bool): Flag to save temporary pyomo files.
             tilim (float): Solver time limit (in seconds).
             trelim (float): Solver tree memory limit (in MB).
-            solver (str): Solver choice. Currently only cplex or
-                neos-cplex are supported
+            solver (str): Solver choice (see ``MatOptModel.optimize``).
 
         Returns:
             (Design) The best design identified by the solver, if any.
@@ -941,18 +993,10 @@ class MatOptModel(BaseModel):
                 In the case that the model was infeasible or no solution
                 could be identified, the method returns 'None'.
         """
-        if solver == "cplex":
-            opt = SolverFactory("cplex")
-            opt.options["mip_tolerances_absmipgap"] = 0.0
-            opt.options["mip_tolerances_mipgap"] = 0.0
-            if tilim is not None:
-                opt.options["timelimit"] = tilim
-            if trelim is not None:
-                opt.options["mip_limits_treememory"] = trelim
-            res = opt.solve(
-                self._pyomo_m, tee=tee, symbolic_solver_labels=True, keepfiles=keepfiles
-            )
-        elif solver == "neos-cplex":
+        if solver == "auto":
+            solver = _pick_default_solver()
+        res = None
+        if solver == "neos-cplex":
             with SolverManagerFactory("neos") as manager:
                 opt = SolverFactory("cplex")
                 opt.options["absmipgap"] = 0.0  # NOTE: different option names
@@ -966,27 +1010,58 @@ class MatOptModel(BaseModel):
                 except Exception as e:
                     print(e)
         else:
-            raise NotImplementedError(
-                "MatOpt is tailored to perform best with CPLEX (locally or through NEOS), "
-                "please contact MatOpt developer for additional solver support "
-            )
+            opt = SolverFactory(_SOLVER_ALIASES.get(solver, solver))
+            if not opt.available(exception_flag=False):
+                raise ApplicationError(
+                    "Solver '{}' is not available. Install highspy for the "
+                    "open-source default (pip install highspy), or choose one of "
+                    "{}.".format(solver, sorted(_SOLVER_ALIASES))
+                )
+            opt.options.update(_solver_options(solver, tilim, trelim))
+            try:
+                res = opt.solve(
+                    self._pyomo_m,
+                    tee=tee,
+                    symbolic_solver_labels=True,
+                    keepfiles=keepfiles,
+                )
+            except (RuntimeError, NoFeasibleSolutionError) as e:
+                # NOTE: The HiGHS interfaces raise instead of returning a
+                #       result when no feasible solution was found.
+                if disp > 0:
+                    print("No feasible solution found: {}".format(e))
+                return None
+        if res is None:
+            return None
         solver_status = res.solver.status
         solver_term = res.solver.termination_condition
-        soln_status = res.solution.status
-        has_solution = (
-            soln_status == SolutionStatus.optimal
-            or soln_status == SolutionStatus.feasible
-            or soln_status == SolutionStatus.bestSoFar
-            or soln_status == SolutionStatus.globallyOptimal
-            or soln_status == SolutionStatus.locallyOptimal
-        )
-        # NOTE: The block below is a hack to get around the fact that Pyomo
-        #       solution statuses are not flagged correctly all the time. If
-        #       solution status was unknown (but actually optimal or feasible)
-        #       then this should (hopefully) flag the solution as available
-        if soln_status == SolutionStatus.unknown:
-            value(self._pyomo_m.obj)
-            has_solution = True
+        if len(res.solution) > 0:
+            soln_status = res.solution.status
+            has_solution = soln_status in (
+                SolutionStatus.optimal,
+                SolutionStatus.feasible,
+                SolutionStatus.bestSoFar,
+                SolutionStatus.globallyOptimal,
+                SolutionStatus.locallyOptimal,
+            )
+            # NOTE: The block below is a hack to get around the fact that Pyomo
+            #       solution statuses are not flagged correctly all the time. If
+            #       solution status was unknown (but actually optimal or feasible)
+            #       then this should (hopefully) flag the solution as available
+            if soln_status == SolutionStatus.unknown:
+                value(self._pyomo_m.obj)
+                has_solution = True
+        else:
+            # NOTE: Some interfaces (e.g., HiGHS) load solutions directly into
+            #       the model without populating res.solution. Infeasible
+            #       outcomes are caught above, so a loaded solution exists
+            #       unless the solver reported infeasibility or an error.
+            has_solution = solver_term not in (
+                TerminationCondition.infeasible,
+                TerminationCondition.infeasibleOrUnbounded,
+                TerminationCondition.unbounded,
+                TerminationCondition.error,
+            ) and (value(self._pyomo_m.obj, exception=False) is not None)
 
         def dispPrint(*args):
             if disp > 0:
