@@ -18,6 +18,7 @@ classifiers = [
 dependencies = [
     "numpy",
     "pyomo",
+    "highspy",
 ]
 
 [project.urls]

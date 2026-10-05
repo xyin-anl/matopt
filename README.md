@@ -34,7 +34,7 @@ MatOpt consists of two main sub-modules:
 
 ## 🔧 Dependencies
 
-MatOpt requires access to the CPLEX solver through Pyomo. If you don't have CPLEX access, you can use [NEOS-CPLEX](https://neos-guide.org/neos-interfaces#pyomo) as an alternative. (Users need to set up a `NEOS_EMAIL` environment variable.)
+MatOpt solves its models through Pyomo. The open-source [HiGHS](https://highs.dev) solver is installed with MatOpt and used by default when no commercial solver is found, so no license is needed. Pass `solver=` to choose explicitly: `"highs"`, `"scip"`, `"gurobi"`, `"cplex"`, `"neos-cplex"` (requires a `NEOS_EMAIL` environment variable), or any other Pyomo solver name. The default `"auto"` picks the first available of CPLEX, Gurobi, HiGHS, and SCIP.
 
 ## 🎨 Creating a Material Design Canvas
 
@@ -184,7 +184,7 @@ m.addGlobalDescriptor(
 )
 m.addGlobalDescriptor("Size", bounds=(N, N), rules=EqualTo(SumSites(desc=m.Yi)))
 
-D = m.maximize(m.Ecoh, tilim=100, solver="neos-cplex")
+D = m.maximize(m.Ecoh, tilim=100, solver="highs")
 ```
 
 For more examples, check the [`MatOpt-bench`](https://github.com/xyin-anl/MatOpt-bench) repository.
